@@ -68,6 +68,9 @@
 #include "apriltag_ros/AprilTagDetection.h"
 #include "apriltag_ros/AprilTagDetectionArray.h"
 
+#include <tf/transform_listener.h>
+
+
 namespace apriltag_ros
 {
 
@@ -156,6 +159,9 @@ class TagBundleDescription
 class TagDetector
 {
  private:
+
+  tf::TransformListener listener;
+  
   // Detections sorting
   static int idComparison(const void* first, const void* second);
 
