@@ -70,6 +70,8 @@
 
 #include <tf/transform_listener.h>
 
+#include <geometry_msgs/PoseWithCovarianceStamped.h>
+
 
 namespace apriltag_ros
 {
@@ -191,6 +193,7 @@ class TagDetector
   bool run_quietly_;
   bool publish_tf_;
   tf::TransformBroadcaster tf_pub_;
+  ros::Publisher pose_pub;
 
  public:
 
