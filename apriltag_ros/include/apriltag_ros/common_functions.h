@@ -195,6 +195,10 @@ class TagDetector
   tf::TransformBroadcaster tf_pub_;
   ros::Publisher pose_pub;
 
+  tf::StampedTransform transform_base_link_to_camera_link;
+  tf::StampedTransform transform_camera_link_to_dcs_door;
+  tf::StampedTransform transform_dcs_door_to_dcs_back;
+
  public:
 
   TagDetector(ros::NodeHandle pnh);

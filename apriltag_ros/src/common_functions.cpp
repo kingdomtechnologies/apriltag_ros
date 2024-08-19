@@ -55,7 +55,7 @@ namespace apriltag_ros
                                                   publish_tf_(getAprilTagOption<bool>(pnh, "publish_tf", false))
   {
 
-    pose_pub = pnh.advertise<geometry_msgs::PoseWithCovarianceStamped>("topic_name", 10);
+    pose_pub = pnh.advertise<geometry_msgs::PoseWithCovarianceStamped>("pose_with_covariance", 10);
 
     // Parse standalone tag descriptions specified by user (stored on ROS
     // parameter server)
@@ -407,52 +407,65 @@ namespace apriltag_ros
                                                    image->header.frame_id,
                                                    detection_names[i]));
 
-        tf::StampedTransform transform2;
         try
         {
-          this->listener.lookupTransform("/base_link", "/dcs_back_rotated",
-                                         ros::Time(0), transform2);
+          // Wait for and get the transform from base_link to camera_link
+          listener.waitForTransform("base_link", "oak_rgb_camera_optical_frame", ros::Time(0), ros::Duration(3.0));
+          listener.lookupTransform("base_link", "oak_rgb_camera_optical_frame", ros::Time(0), transform_base_link_to_camera_link);
+
+          // Wait for and get the transform from camera_link to dcs_door
+          // listener.waitForTransform("oak_rgb_camera_optical_frame", "Bundle 1", ros::Time(0), ros::Duration(3.0));
+          // listener.lookupTransform("oak_rgb_camera_optical_frame", "Bundle 1", ros::Time(0), transform_camera_link_to_dcs_door);
+          tf::Stamped<tf::Transform> transform_camera_link_to_dcs_door;
+          tf::poseStampedMsgToTF(pose, transform_camera_link_to_dcs_door);
+
+          // Wait for and get the transform from dcs_door to dcs_back
+          listener.waitForTransform("Bundle 1", "dcs_back_rotated", ros::Time(0), ros::Duration(3.0));
+          listener.lookupTransform("Bundle 1", "dcs_back_rotated", ros::Time(0), transform_dcs_door_to_dcs_back);
+
+          // Invert the transformations
+          tf::Transform T_base_link_to_camera_link_inv = transform_base_link_to_camera_link.inverse();
+          tf::Transform T_camera_link_to_dcs_door_inv = transform_camera_link_to_dcs_door.inverse();
+          tf::Transform T_dcs_door_to_dcs_back_inv = transform_dcs_door_to_dcs_back.inverse();
+
+          // Chain the transformations to get T_dcs_back_to_base_link
+          tf::Transform T_dcs_back_to_base_link = T_dcs_door_to_dcs_back_inv * T_camera_link_to_dcs_door_inv * T_base_link_to_camera_link_inv;
+
+          // Get the translation and rotation
+          tf::Vector3 translation = T_dcs_back_to_base_link.getOrigin();
+          tf::Quaternion rotation = T_dcs_back_to_base_link.getRotation();
+
+          geometry_msgs::PoseWithCovarianceStamped bundle_pose;
+
+          bundle_pose.header = image->header;
+          bundle_pose.header.frame_id = "map";
+
+          bundle_pose.pose.pose.position.x = translation.x();
+          bundle_pose.pose.pose.position.y = translation.y();
+          bundle_pose.pose.pose.position.z = translation.z();
+          bundle_pose.pose.pose.orientation.x = rotation.x();
+          bundle_pose.pose.pose.orientation.y = rotation.y();
+          bundle_pose.pose.pose.orientation.z = rotation.z();
+          bundle_pose.pose.pose.orientation.w = rotation.w();
+
+          // Set the covariance array (36 elements, all set to some example value)
+          for (int i = 0; i < 36; ++i)
+            bundle_pose.pose.covariance[i] = 0.0; // Example: all values set to 0.0
+
+          // Optionally, set specific values in the covariance matrix
+          bundle_pose.pose.covariance[0] = 0.01;  // Example value for covariance in x
+          bundle_pose.pose.covariance[7] = 0.01;  // Example value for covariance in y
+          bundle_pose.pose.covariance[14] = 0.01; // Example value for covariance in z
+          bundle_pose.pose.covariance[21] = 0.01; // Example value for covariance in roll
+          bundle_pose.pose.covariance[28] = 0.01; // Example value for covariance in pitch
+          bundle_pose.pose.covariance[35] = 0.01; // Example value for covariance in yaw
+
+          pose_pub.publish(bundle_pose);
         }
-        catch (tf::TransformException ex)
+        catch (tf::TransformException &ex)
         {
           ROS_ERROR("%s", ex.what());
-          ros::Duration(1.0).sleep();
         }
-
-        tf::Transform transform;
-        transform.setOrigin(tf::Vector3(1, 0, 0.0));
-        tf::Quaternion q;
-        q.setRPY(0, 0, 0);
-        transform.setRotation(q);
-
-        geometry_msgs::PoseWithCovarianceStamped bundle_pose;
-
-        bundle_pose.header = image->header;
-        bundle_pose.header.frame_id = "map";
-
-        bundle_pose.pose.pose.position.x = transform2.inverse().getOrigin().x();
-        bundle_pose.pose.pose.position.y = transform2.inverse().getOrigin().y();
-        bundle_pose.pose.pose.position.z = transform2.inverse().getOrigin().z();
-        bundle_pose.pose.pose.orientation.x = transform2.inverse().getRotation().x();
-        bundle_pose.pose.pose.orientation.y = transform2.inverse().getRotation().y();
-        bundle_pose.pose.pose.orientation.z = transform2.inverse().getRotation().z();
-        bundle_pose.pose.pose.orientation.w = transform2.inverse().getRotation().w();
-        
-        // Set the covariance array (36 elements, all set to some example value)
-        for (int i = 0; i < 36; ++i)
-        {
-          bundle_pose.pose.covariance[i] = 0.0; // Example: all values set to 0.0
-        }
-
-        // Optionally, set specific values in the covariance matrix
-        bundle_pose.pose.covariance[0] = 0.01;  // Example value for covariance in x
-        bundle_pose.pose.covariance[7] = 0.01;  // Example value for covariance in y
-        bundle_pose.pose.covariance[14] = 0.01; // Example value for covariance in z
-        bundle_pose.pose.covariance[21] = 0.01; // Example value for covariance in roll
-        bundle_pose.pose.covariance[28] = 0.01; // Example value for covariance in pitch
-        bundle_pose.pose.covariance[35] = 0.01; // Example value for covariance in yaw
-
-        pose_pub.publish(bundle_pose);
       }
     }
 
