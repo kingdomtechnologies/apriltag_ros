@@ -223,6 +223,7 @@ namespace apriltag_ros
     else
     {
       cv::cvtColor(image->image, gray_image, CV_BGR2GRAY);
+      // gray_image = 255 - gray_image;
     }
     image_u8_t apriltag_image = {.width = gray_image.cols,
                                  .height = gray_image.rows,
@@ -372,6 +373,10 @@ namespace apriltag_ros
           bundleObjectPoints.find(bundleName);
       if (it != bundleObjectPoints.end())
       {
+        // Log the actual number of detected tags in this bundle
+        int num_detected_tags_in_bundle = bundleObjectPoints[bundleName].size() / 4; // Each tag has 4 corners
+        ROS_INFO("Bundle '%s' contains %d detected tags", bundleName.c_str(), num_detected_tags_in_bundle);
+
         // Some member tags of this bundle were detected, get the bundle's
         // position!
         TagBundleDescription &bundle = tag_bundle_descriptions_[j];
@@ -387,6 +392,7 @@ namespace apriltag_ros
         tag_detection.pose = bundle_pose;
         tag_detection.id = bundle.bundleIds();
         tag_detection.size = bundle.bundleSizes();
+        tag_detection.number_detections = num_detected_tags_in_bundle;
         tag_detection_array.detections.push_back(tag_detection);
         detection_names.push_back(bundle.name());
       }
@@ -397,74 +403,77 @@ namespace apriltag_ros
     {
       for (unsigned int i = 0; i < tag_detection_array.detections.size(); i++)
       {
-        geometry_msgs::PoseStamped pose;
-        pose.pose = tag_detection_array.detections[i].pose.pose.pose;
-        pose.header = tag_detection_array.detections[i].pose.header;
-        tf::Stamped<tf::Transform> tag_transform;
-        tf::poseStampedMsgToTF(pose, tag_transform);
-        tf_pub_.sendTransform(tf::StampedTransform(tag_transform,
-                                                   tag_transform.stamp_,
-                                                   image->header.frame_id,
-                                                   detection_names[i]));
-
-        try
+        if (tag_detection_array.detections[i].number_detections > 3)
         {
-          // Wait for and get the transform from base_link to camera_link
-          listener.waitForTransform("base_link", "oak_rgb_camera_optical_frame", ros::Time(0), ros::Duration(3.0));
-          listener.lookupTransform("base_link", "oak_rgb_camera_optical_frame", ros::Time(0), transform_base_link_to_camera_link);
+          geometry_msgs::PoseStamped pose;
+          pose.pose = tag_detection_array.detections[i].pose.pose.pose;
+          pose.header = tag_detection_array.detections[i].pose.header;
+          tf::Stamped<tf::Transform> tag_transform;
+          tf::poseStampedMsgToTF(pose, tag_transform);
+          tf_pub_.sendTransform(tf::StampedTransform(tag_transform,
+                                                     tag_transform.stamp_,
+                                                     image->header.frame_id,
+                                                     detection_names[i]));
 
-          // Wait for and get the transform from camera_link to dcs_door
-          // listener.waitForTransform("oak_rgb_camera_optical_frame", "Bundle 1", ros::Time(0), ros::Duration(3.0));
-          // listener.lookupTransform("oak_rgb_camera_optical_frame", "Bundle 1", ros::Time(0), transform_camera_link_to_dcs_door);
-          tf::Stamped<tf::Transform> transform_camera_link_to_dcs_door;
-          tf::poseStampedMsgToTF(pose, transform_camera_link_to_dcs_door);
+          try
+          {
+            // Wait for and get the transform from base_link to camera_link
+            listener.waitForTransform("base_link", "oak_rgb_camera_optical_frame", ros::Time(0), ros::Duration(3.0));
+            listener.lookupTransform("base_link", "oak_rgb_camera_optical_frame", ros::Time(0), transform_base_link_to_camera_link);
 
-          // Wait for and get the transform from dcs_door to dcs_back
-          listener.waitForTransform("Bundle 1", "dcs_back_rotated", ros::Time(0), ros::Duration(3.0));
-          listener.lookupTransform("Bundle 1", "dcs_back_rotated", ros::Time(0), transform_dcs_door_to_dcs_back);
+            // Wait for and get the transform from camera_link to dcs_door
+            // listener.waitForTransform("oak_rgb_camera_optical_frame", "Bundle 1", ros::Time(0), ros::Duration(3.0));
+            // listener.lookupTransform("oak_rgb_camera_optical_frame", "Bundle 1", ros::Time(0), transform_camera_link_to_dcs_door);
+            tf::Stamped<tf::Transform> transform_camera_link_to_dcs_door;
+            tf::poseStampedMsgToTF(pose, transform_camera_link_to_dcs_door);
 
-          // Invert the transformations
-          tf::Transform T_base_link_to_camera_link_inv = transform_base_link_to_camera_link.inverse();
-          tf::Transform T_camera_link_to_dcs_door_inv = transform_camera_link_to_dcs_door.inverse();
-          tf::Transform T_dcs_door_to_dcs_back_inv = transform_dcs_door_to_dcs_back.inverse();
+            // Wait for and get the transform from dcs_door to dcs_back
+            listener.waitForTransform("Bundle 1", "dcs_back_rotated", ros::Time(0), ros::Duration(3.0));
+            listener.lookupTransform("Bundle 1", "dcs_back_rotated", ros::Time(0), transform_dcs_door_to_dcs_back);
 
-          // Chain the transformations to get T_dcs_back_to_base_link
-          tf::Transform T_dcs_back_to_base_link = T_dcs_door_to_dcs_back_inv * T_camera_link_to_dcs_door_inv * T_base_link_to_camera_link_inv;
+            // Invert the transformations
+            tf::Transform T_base_link_to_camera_link_inv = transform_base_link_to_camera_link.inverse();
+            tf::Transform T_camera_link_to_dcs_door_inv = transform_camera_link_to_dcs_door.inverse();
+            tf::Transform T_dcs_door_to_dcs_back_inv = transform_dcs_door_to_dcs_back.inverse();
 
-          // Get the translation and rotation
-          tf::Vector3 translation = T_dcs_back_to_base_link.getOrigin();
-          tf::Quaternion rotation = T_dcs_back_to_base_link.getRotation();
+            // Chain the transformations to get T_dcs_back_to_base_link
+            tf::Transform T_dcs_back_to_base_link = T_dcs_door_to_dcs_back_inv * T_camera_link_to_dcs_door_inv * T_base_link_to_camera_link_inv;
 
-          geometry_msgs::PoseWithCovarianceStamped bundle_pose;
+            // Get the translation and rotation
+            tf::Vector3 translation = T_dcs_back_to_base_link.getOrigin();
+            tf::Quaternion rotation = T_dcs_back_to_base_link.getRotation();
 
-          bundle_pose.header = image->header;
-          bundle_pose.header.frame_id = "map";
+            geometry_msgs::PoseWithCovarianceStamped bundle_pose;
 
-          bundle_pose.pose.pose.position.x = translation.x();
-          bundle_pose.pose.pose.position.y = translation.y();
-          bundle_pose.pose.pose.position.z = translation.z();
-          bundle_pose.pose.pose.orientation.x = rotation.x();
-          bundle_pose.pose.pose.orientation.y = rotation.y();
-          bundle_pose.pose.pose.orientation.z = rotation.z();
-          bundle_pose.pose.pose.orientation.w = rotation.w();
+            bundle_pose.header = image->header;
+            bundle_pose.header.frame_id = "map";
 
-          // Set the covariance array (36 elements, all set to some example value)
-          for (int i = 0; i < 36; ++i)
-            bundle_pose.pose.covariance[i] = 0.0; // Example: all values set to 0.0
+            bundle_pose.pose.pose.position.x = translation.x();
+            bundle_pose.pose.pose.position.y = translation.y();
+            bundle_pose.pose.pose.position.z = translation.z();
+            bundle_pose.pose.pose.orientation.x = rotation.x();
+            bundle_pose.pose.pose.orientation.y = rotation.y();
+            bundle_pose.pose.pose.orientation.z = rotation.z();
+            bundle_pose.pose.pose.orientation.w = rotation.w();
 
-          // Optionally, set specific values in the covariance matrix
-          bundle_pose.pose.covariance[0] = 0.01;  // Example value for covariance in x
-          bundle_pose.pose.covariance[7] = 0.01;  // Example value for covariance in y
-          bundle_pose.pose.covariance[14] = 0.01; // Example value for covariance in z
-          bundle_pose.pose.covariance[21] = 0.01; // Example value for covariance in roll
-          bundle_pose.pose.covariance[28] = 0.01; // Example value for covariance in pitch
-          bundle_pose.pose.covariance[35] = 0.01; // Example value for covariance in yaw
+            // Set the covariance array (36 elements, all set to some example value)
+            for (int i = 0; i < 36; ++i)
+              bundle_pose.pose.covariance[i] = 0.0; // Example: all values set to 0.0
 
-          pose_pub.publish(bundle_pose);
-        }
-        catch (tf::TransformException &ex)
-        {
-          ROS_ERROR("%s", ex.what());
+            // Optionally, set specific values in the covariance matrix
+            bundle_pose.pose.covariance[0] = 0.01;  // Example value for covariance in x
+            bundle_pose.pose.covariance[7] = 0.01;  // Example value for covariance in y
+            bundle_pose.pose.covariance[14] = 0.01; // Example value for covariance in z
+            bundle_pose.pose.covariance[21] = 0.01; // Example value for covariance in roll
+            bundle_pose.pose.covariance[28] = 0.01; // Example value for covariance in pitch
+            bundle_pose.pose.covariance[35] = 0.01; // Example value for covariance in yaw
+
+            pose_pub.publish(bundle_pose);
+          }
+          catch (tf::TransformException &ex)
+          {
+            ROS_ERROR("%s", ex.what());
+          }
         }
       }
     }
