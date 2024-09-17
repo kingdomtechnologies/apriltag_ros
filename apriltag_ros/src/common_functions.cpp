@@ -57,6 +57,9 @@ namespace apriltag_ros
 
     pose_pub = pnh.advertise<geometry_msgs::PoseWithCovarianceStamped>("pose_with_covariance", 10);
 
+    // Retrieve covariance parameter from the parameter server
+    pnh.param("covariance", covariance_value, 1.0); // default value 0.1
+
     // Parse standalone tag descriptions specified by user (stored on ROS
     // parameter server)
     XmlRpc::XmlRpcValue standalone_tag_descriptions;
@@ -375,7 +378,7 @@ namespace apriltag_ros
       {
         // Log the actual number of detected tags in this bundle
         int num_detected_tags_in_bundle = bundleObjectPoints[bundleName].size() / 4; // Each tag has 4 corners
-        ROS_INFO("Bundle '%s' contains %d detected tags", bundleName.c_str(), num_detected_tags_in_bundle);
+        ROS_INFO("Bundle '%s' contains %d detected tags, cov: %f", bundleName.c_str(), num_detected_tags_in_bundle, covariance_value);
 
         // Some member tags of this bundle were detected, get the bundle's
         // position!
@@ -403,7 +406,7 @@ namespace apriltag_ros
     {
       for (unsigned int i = 0; i < tag_detection_array.detections.size(); i++)
       {
-        if (tag_detection_array.detections[i].number_detections > 3)
+        if (tag_detection_array.detections[i].number_detections > 2)
         {
           geometry_msgs::PoseStamped pose;
           pose.pose = tag_detection_array.detections[i].pose.pose.pose;
@@ -461,12 +464,12 @@ namespace apriltag_ros
               bundle_pose.pose.covariance[i] = 0.0; // Example: all values set to 0.0
 
             // Optionally, set specific values in the covariance matrix
-            bundle_pose.pose.covariance[0] = 0.01;  // Example value for covariance in x
-            bundle_pose.pose.covariance[7] = 0.01;  // Example value for covariance in y
-            bundle_pose.pose.covariance[14] = 0.01; // Example value for covariance in z
-            bundle_pose.pose.covariance[21] = 0.01; // Example value for covariance in roll
-            bundle_pose.pose.covariance[28] = 0.01; // Example value for covariance in pitch
-            bundle_pose.pose.covariance[35] = 0.01; // Example value for covariance in yaw
+            bundle_pose.pose.covariance[0] = covariance_value;  // Example value for covariance in x
+            bundle_pose.pose.covariance[7] = covariance_value;  // Example value for covariance in y
+            bundle_pose.pose.covariance[14] = covariance_value; // Example value for covariance in z
+            bundle_pose.pose.covariance[21] = covariance_value; // Example value for covariance in roll
+            bundle_pose.pose.covariance[28] = covariance_value; // Example value for covariance in pitch
+            bundle_pose.pose.covariance[35] = covariance_value; // Example value for covariance in yaw
 
             pose_pub.publish(bundle_pose);
           }
