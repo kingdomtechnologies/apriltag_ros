@@ -58,7 +58,7 @@ namespace apriltag_ros
     pose_pub = pnh.advertise<geometry_msgs::PoseWithCovarianceStamped>("pose_with_covariance", 10);
 
     // Retrieve covariance parameter from the parameter server
-    pnh.param("covariance", covariance_value, 1.0); // default value 0.1
+    pnh.param("covariance", covariance_value, 0.1); // default value 0.1
 
     // Parse standalone tag descriptions specified by user (stored on ROS
     // parameter server)
@@ -406,7 +406,7 @@ namespace apriltag_ros
     {
       for (unsigned int i = 0; i < tag_detection_array.detections.size(); i++)
       {
-        if (tag_detection_array.detections[i].number_detections > 2)
+        if (tag_detection_array.detections[i].number_detections > 1)
         {
           geometry_msgs::PoseStamped pose;
           pose.pose = tag_detection_array.detections[i].pose.pose.pose;
@@ -431,8 +431,8 @@ namespace apriltag_ros
             tf::poseStampedMsgToTF(pose, transform_camera_link_to_dcs_door);
 
             // Wait for and get the transform from dcs_door to dcs_back
-            listener.waitForTransform("Bundle 1", "dcs_back_rotated", ros::Time(0), ros::Duration(3.0));
-            listener.lookupTransform("Bundle 1", "dcs_back_rotated", ros::Time(0), transform_dcs_door_to_dcs_back);
+            listener.waitForTransform("Bundle 1", "dcs_back", ros::Time(0), ros::Duration(3.0));
+            listener.lookupTransform("Bundle 1", "dcs_back", ros::Time(0), transform_dcs_door_to_dcs_back);
 
             // Invert the transformations
             tf::Transform T_base_link_to_camera_link_inv = transform_base_link_to_camera_link.inverse();
@@ -449,7 +449,7 @@ namespace apriltag_ros
             geometry_msgs::PoseWithCovarianceStamped bundle_pose;
 
             bundle_pose.header = image->header;
-            bundle_pose.header.frame_id = "map";
+            bundle_pose.header.frame_id = "cs_back";
 
             bundle_pose.pose.pose.position.x = translation.x();
             bundle_pose.pose.pose.position.y = translation.y();
