@@ -226,7 +226,7 @@ namespace apriltag_ros
     else
     {
       cv::cvtColor(image->image, gray_image, CV_BGR2GRAY);
-      // gray_image = 255 - gray_image;
+      gray_image = 255 - gray_image;
     }
     image_u8_t apriltag_image = {.width = gray_image.cols,
                                  .height = gray_image.rows,
