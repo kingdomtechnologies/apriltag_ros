@@ -430,9 +430,11 @@ namespace apriltag_ros
             tf::Stamped<tf::Transform> transform_camera_link_to_dcs_door;
             tf::poseStampedMsgToTF(pose, transform_camera_link_to_dcs_door);
 
+            ROS_INFO_STREAM("Bundle: " << detection_names[i]);
+
             // Wait for and get the transform from dcs_door to dcs_back
-            listener.waitForTransform("Bundle 1", "dcs_back", ros::Time(0), ros::Duration(3.0));
-            listener.lookupTransform("Bundle 1", "dcs_back", ros::Time(0), transform_dcs_door_to_dcs_back);
+            listener.waitForTransform(detection_names[i], "dcs_back_" + detection_names[i], ros::Time(0), ros::Duration(3.0));
+            listener.lookupTransform(detection_names[i], "dcs_back_" + detection_names[i], ros::Time(0), transform_dcs_door_to_dcs_back);
 
             // Invert the transformations
             tf::Transform T_base_link_to_camera_link_inv = transform_base_link_to_camera_link.inverse();
